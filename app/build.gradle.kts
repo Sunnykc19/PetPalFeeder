@@ -10,7 +10,7 @@ android {
     defaultConfig {
         applicationId = "com.example.petpalfeeder"
         minSdk = 23
-        targetSdk /;= 37
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 

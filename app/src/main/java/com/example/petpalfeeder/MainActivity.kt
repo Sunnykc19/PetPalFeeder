@@ -1,6 +1,7 @@
 package com.example.petpalfeeder
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -12,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,7 +31,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 // --- Data Models ---
-data class FeedingEntry(val time: String, val amount: String)
+data class FeedingEntry(val date: String, val time: String, val amount: String)
 data class PetProfile(val name: String, val type: String, val food: String)
 data class ScheduleEntry(val name: String, val time: String)
 
@@ -55,7 +57,11 @@ fun PetPalTrackerApp() {
     
     // Shared State (Mock Data)
     var petProfile by remember { mutableStateOf(PetProfile("Shadow", "Dog", "1 cup kibble")) }
-    val feedingHistory = remember { mutableStateListOf(FeedingEntry("Today 8:00 AM", "1 cup"), FeedingEntry("Yesterday 6:00 PM", "1 cup"), FeedingEntry("Yesterday 8:00 AM", "1 cup")) }
+    val feedingHistory = remember { mutableStateListOf(
+        FeedingEntry("Feb 24", "8:00 AM", "1 cup"), 
+        FeedingEntry("Feb 23", "6:00 PM", "1 cup"), 
+        FeedingEntry("Feb 23", "8:00 AM", "1 cup")
+    ) }
     var lastFedTime by remember { mutableStateOf("8:00 AM") }
     var nextMealTime by remember { mutableStateOf("6:00 PM") }
     var schedule by remember { mutableStateOf(listOf(ScheduleEntry("Breakfast", "8:00 AM"), ScheduleEntry("Dinner", "6:00 PM"))) }
@@ -126,10 +132,20 @@ fun PetPalTrackerApp() {
             }
             composable("log") { 
                 FeedingLogScreen(
-                    onSave = { time, amount ->
-                        feedingHistory.add(0, FeedingEntry(time, amount))
+                    history = feedingHistory,
+                    onSave = { date, time, amount ->
+                        Log.i("PetPalFeeder", "Feeding recorded: $amount on $date at $time")
+                        feedingHistory.add(0, FeedingEntry(date, time, amount))
                         lastFedTime = time
-                        navController.navigate("home")
+                    },
+                    onUndo = {
+                        if (feedingHistory.isNotEmpty()) {
+                            val removed = feedingHistory.removeAt(0)
+                            Log.i("PetPalFeeder", "Undo: removed feeding from ${removed.time}")
+                            if (feedingHistory.isNotEmpty()) {
+                                lastFedTime = feedingHistory[0].time
+                            }
+                        }
                     }
                 ) 
             }
@@ -228,7 +244,10 @@ fun HomeScreen(
         Spacer(modifier = Modifier.height(40.dp))
 
         Button(
-            onClick = { navController.navigate("log") },
+            onClick = { 
+                Log.d("PetPalFeeder", "Feed Now button clicked - navigating to log screen")
+                navController.navigate("log") 
+            },
             colors = ButtonDefaults.buttonColors(containerColor = GreenHeader),
             modifier = Modifier.fillMaxWidth(0.8f).height(55.dp),
             shape = RoundedCornerShape(12.dp)
@@ -365,9 +384,17 @@ fun ScheduleScreen(
 }
 
 @Composable
-fun FeedingLogScreen(onSave: (String, String) -> Unit) {
+fun FeedingLogScreen(
+    history: List<FeedingEntry>, 
+    onSave: (String, String, String) -> Unit,
+    onUndo: () -> Unit
+) {
+    val timeFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
+    val dateFormat = SimpleDateFormat("MMM dd", Locale.getDefault())
+    
     var amount by remember { mutableStateOf("1 cup") }
-    val currentTime = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+    var logTime by remember { mutableStateOf(timeFormat.format(Date())) }
+    var logDate by remember { mutableStateOf(dateFormat.format(Date())) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(
@@ -381,23 +408,82 @@ fun FeedingLogScreen(onSave: (String, String) -> Unit) {
         }
         
         Column(modifier = Modifier.padding(24.dp)) {
-            Text("Log Feeding", fontWeight = FontWeight.Bold, fontSize = 22.sp)
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            Text("Time", color = Color.Gray)
-            OutlinedTextField(value = currentTime, onValueChange = {}, modifier = Modifier.fillMaxWidth(), enabled = false)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Log Feeding", fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                if (history.isNotEmpty()) {
+                    TextButton(onClick = onUndo) {
+                        Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Undo Last")
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(16.dp))
+            
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Date", color = Color.Gray)
+                    OutlinedTextField(
+                        value = logDate, 
+                        onValueChange = { logDate = it }, 
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("MMM dd") }
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Time", color = Color.Gray)
+                    OutlinedTextField(
+                        value = logTime, 
+                        onValueChange = { logTime = it }, 
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("hh:mm a") }
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
             Text("Amount", color = Color.Gray)
             OutlinedTextField(value = amount, onValueChange = { amount = it }, modifier = Modifier.fillMaxWidth())
             
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(24.dp))
             Button(
-                onClick = { onSave(currentTime, amount) },
+                onClick = { 
+                    onSave(logDate, logTime, amount)
+                    amount = "" // Reset amount after saving
+                },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = GreenHeader),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text("Save Feeding", fontSize = 18.sp)
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+            Text("Recent Feedings", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                items(history) { entry ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(entry.time, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text(entry.date, fontSize = 12.sp, color = Color.Gray)
+                        }
+                        Text(entry.amount, fontSize = 16.sp, color = Color.Gray)
+                    }
+                    HorizontalDivider()
+                }
             }
         }
     }
@@ -429,7 +515,7 @@ fun HistoryScreen(history: List<FeedingEntry>) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(entry.time, fontSize = 18.sp)
-                        Text("— ${entry.amount}", fontSize = 18.sp, color = Color.Gray)
+                        Text("— ${entry.date} ${entry.amount}", fontSize = 18.sp, color = Color.Gray)
                     }
                     HorizontalDivider()
                 }
