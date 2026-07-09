@@ -56,11 +56,11 @@ fun PetPalTrackerApp() {
     val navController = rememberNavController()
     
     // Shared State (Mock Data)
-    var petProfile by remember { mutableStateOf(PetProfile("Shadow", "Dog", "1 cup kibble")) }
+    var petProfile by remember { mutableStateOf(PetProfile("Shadow", "Cat", "1 cup food")) }
     val feedingHistory = remember { mutableStateListOf(
-        FeedingEntry("Feb 24", "8:00 AM", "1 cup"), 
-        FeedingEntry("Feb 23", "6:00 PM", "1 cup"), 
-        FeedingEntry("Feb 23", "8:00 AM", "1 cup")
+        FeedingEntry("June 24", "8:00 AM", "1 cup"),
+        FeedingEntry("June 23", "6:00 PM", "1 cup"),
+        FeedingEntry("June 23", "8:00 AM", "1 cup")
     ) }
     var lastFedTime by remember { mutableStateOf("8:00 AM") }
     var nextMealTime by remember { mutableStateOf("6:00 PM") }
