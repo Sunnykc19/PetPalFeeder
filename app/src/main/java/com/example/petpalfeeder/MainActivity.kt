@@ -355,6 +355,12 @@ fun PetPalTrackerApp(dataManager: DataManager, isDarkModeState: MutableState<Boo
     var schedule by remember { mutableStateOf(dataManager.loadSchedule()) }
     var remindersOn by remember { mutableStateOf(dataManager.loadRemindersOn()) }
     var currentLanguage by remember { mutableStateOf(dataManager.loadLanguage()) }
+    var petNotes by remember { mutableStateOf("") }
+
+    // Load notes when pet changes
+    LaunchedEffect(selectedPetIndex) {
+        petNotes = dataManager.loadPetNotes(selectedPetIndex)
+    }
 
     val layoutDirection = if (currentLanguage == "Arabic" || currentLanguage == "Urdu") {
         LayoutDirection.Rtl
@@ -542,10 +548,23 @@ fun PetPalTrackerApp(dataManager: DataManager, isDarkModeState: MutableState<Boo
                         petProfile = currentPet,
                         onNavigateToSchedule = { navController.navigate("schedule") },
                         onEditPet = { navController.navigate("edit_pet/$selectedPetIndex") },
+                        onNavigateToNotes = { navController.navigate("notes") },
                         isDarkMode = isDarkModeState.value,
                         onDarkModeToggle = { isDarkModeState.value = it },
                         currentLanguage = currentLanguage,
                         onLanguageChange = { currentLanguage = it }
+                    )
+                }
+                composable("notes") {
+                    NotesScreen(
+                        petName = currentPet.name,
+                        initialNotes = petNotes,
+                        onSave = { notes ->
+                            petNotes = notes
+                            dataManager.savePetNotes(selectedPetIndex, notes)
+                            navController.popBackStack()
+                        },
+                        onBack = { navController.popBackStack() }
                     )
                 }
                 composable("settings") {
@@ -1297,6 +1316,7 @@ fun ProfileScreen(
     petProfile: PetProfile?,
     onNavigateToSchedule: () -> Unit,
     onEditPet: () -> Unit,
+    onNavigateToNotes: () -> Unit,
     isDarkMode: Boolean,
     onDarkModeToggle: (Boolean) -> Unit,
     currentLanguage: String,
@@ -1338,8 +1358,48 @@ fun ProfileScreen(
         Spacer(modifier = Modifier.height(32.dp))
 
         ProfileMenuItem(icon = Icons.Default.Restaurant, label = t("feeding_schedule"), onClick = onNavigateToSchedule)
-        ProfileMenuItem(icon = Icons.Default.Description, label = t("notes"), onClick = {})
+        ProfileMenuItem(icon = Icons.Default.Description, label = t("notes"), onClick = onNavigateToNotes)
         ProfileMenuItem(icon = Icons.Default.Favorite, label = t("about") + " ${petProfile?.name ?: t("unknown")}", onClick = {})
+    }
+}
+
+@Composable
+fun NotesScreen(
+    petName: String,
+    initialNotes: String,
+    onSave: (String) -> Unit,
+    onBack: () -> Unit
+) {
+    var notes by remember { mutableStateOf(initialNotes) }
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text(t("notes") + ": $petName", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        OutlinedTextField(
+            value = notes,
+            onValueChange = { notes = it },
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            placeholder = { Text("Type notes here...") },
+            shape = RoundedCornerShape(12.dp)
+        )
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Button(
+            onClick = { onSave(notes) },
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = AppOrange),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text(t("save_pet"), fontSize = 18.sp) // Using save_pet as a generic save label
+        }
     }
 }
 
@@ -1512,17 +1572,26 @@ class DataManager(context: Context) {
     fun loadLanguage(): String {
         return prefs.getString("language", "English") ?: "English"
     }
+
+    fun savePetNotes(petIndex: Int, notes: String) {
+        dbHelper.savePetNotes(petIndex, notes)
+    }
+
+    fun loadPetNotes(petIndex: Int): String {
+        return dbHelper.getPetNotes(petIndex)
+    }
 }
 
 class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
     companion object {
         private const val DATABASE_NAME = "PetPalFeeder.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 3
 
         // Tables
         private const val TABLE_PETS = "pets"
         private const val TABLE_HISTORY = "history"
         private const val TABLE_SCHEDULE = "schedule"
+        private const val TABLE_NOTES = "notes"
 
         // Columns
         private const val COL_ID = "id"
@@ -1534,18 +1603,22 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         private const val COL_BIRTH = "birthDate"
         private const val COL_WEIGHT = "weight"
         private const val COL_AMOUNT = "amount"
+        private const val COL_PET_INDEX = "petIndex"
+        private const val COL_CONTENT = "content"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE $TABLE_PETS ($COL_ID INTEGER PRIMARY KEY AUTOINCREMENT, $COL_NAME TEXT, $COL_TYPE TEXT, $COL_BREED TEXT, $COL_BIRTH TEXT, $COL_WEIGHT TEXT)")
         db.execSQL("CREATE TABLE $TABLE_HISTORY ($COL_ID INTEGER PRIMARY KEY AUTOINCREMENT, $COL_DATE TEXT, $COL_TIME TEXT, $COL_AMOUNT TEXT, $COL_TYPE TEXT)")
         db.execSQL("CREATE TABLE $TABLE_SCHEDULE ($COL_ID INTEGER PRIMARY KEY AUTOINCREMENT, $COL_NAME TEXT, $COL_TIME TEXT)")
+        db.execSQL("CREATE TABLE $TABLE_NOTES ($COL_ID INTEGER PRIMARY KEY AUTOINCREMENT, $COL_PET_INDEX INTEGER, $COL_CONTENT TEXT)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         db.execSQL("DROP TABLE IF EXISTS $TABLE_PETS")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_HISTORY")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_SCHEDULE")
+        db.execSQL("DROP TABLE IF EXISTS $TABLE_NOTES")
         onCreate(db)
     }
 
@@ -1642,6 +1715,35 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
+        }
+    }
+
+    fun savePetNotes(petIndex: Int, notes: String) {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COL_PET_INDEX, petIndex)
+            put(COL_CONTENT, notes)
+        }
+        val rowsAffected = db.update(TABLE_NOTES, values, "$COL_PET_INDEX = ?", arrayOf(petIndex.toString()))
+        if (rowsAffected == 0) {
+            db.insert(TABLE_NOTES, null, values)
+        }
+    }
+
+    fun getPetNotes(petIndex: Int): String {
+        return try {
+            val db = readableDatabase
+            val cursor = db.query(TABLE_NOTES, arrayOf(COL_CONTENT), "$COL_PET_INDEX = ?", arrayOf(petIndex.toString()), null, null, null)
+            var notes = ""
+            with(cursor) {
+                if (moveToFirst()) {
+                    notes = getString(getColumnIndexOrThrow(COL_CONTENT))
+                }
+                close()
+            }
+            notes
+        } catch (e: Exception) {
+            ""
         }
     }
 
